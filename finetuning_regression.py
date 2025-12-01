@@ -2,41 +2,42 @@ from transformers import Trainer, TrainingArguments
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from datasets import load_from_disk
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score # <--- Added imports
+from sklearn.metrics import mean_squared_error, r2_score # <--- CHANGED: Regression metrics
 from transformers import DataCollatorWithPadding
 
-# --- FIX 1: Define how to calculate F1 ---
+# --- CHANGED: Regression Metrics ---
 def compute_metrics(eval_pred):
-    logits, labels = eval_pred
-    # Convert raw scores to the predicted class (0, 1, or 2)
-    predictions = np.argmax(logits, axis=-1)
+    predictions, labels = eval_pred
+    # Note: We do NOT use np.argmax here because the model outputs a single raw number.
+    # predictions are already the complexity scores (e.g., 0.65)
     
-    # Calculate metrics
-    acc = accuracy_score(labels, predictions)
-    f1 = f1_score(labels, predictions, average="macro") # Macro is best for balanced classes
+    mse = mean_squared_error(labels, predictions)
+    rmse = np.sqrt(mse)
+    r2 = r2_score(labels, predictions)
     
-    return {"accuracy": acc, "f1": f1}
+    return {"rmse": rmse, "r2": r2}
 
 # Load model from memory
 model = AutoModelForSequenceClassification.from_pretrained(
     "my_model/", 
-    num_labels=3,  # <--- FIX 2: Explicitly set 3 classes (0, 1, 2)
-    reference_compile=False
+    num_labels=1,           # <--- CRITICAL: 1 Node triggers Regression (MSE Loss)
+    reference_compile=False # Keep this to prevent cluster errors
 )
 tokenizer = AutoTokenizer.from_pretrained("my_model/")
 
-# Load tokenized dataset
-tokenized_dataset = load_from_disk("tokenized_dataset")
+# Load the NEW regression dataset
+# This must match the folder name you used in the notebook
+tokenized_dataset = load_from_disk("tokenized_dataset_regression")
 
-# Define training args (16 GB VRAM Optimized)
+# Define training args
 training_args = TrainingArguments(
-    output_dir="ModernBERT-domain-classifier",
+    output_dir="ModernBERT-complexity-regression", # <--- Save to new folder
     
-    # Batch Sizes & Speed
-    per_device_train_batch_size=32, # Aggressive but good for short text on 16GB
+    # Batch Sizes & Speed (Kept your stable settings)
+    per_device_train_batch_size=32, 
     per_device_eval_batch_size=64,
     gradient_accumulation_steps=4,
-    dataloader_num_workers=4,        # <--- Added to prevent CPU bottleneck
+    dataloader_num_workers=4,
     bf16=True, 
     optim="adamw_torch_fused", 
     
@@ -51,10 +52,10 @@ training_args = TrainingArguments(
     save_strategy="epoch",
     save_total_limit=2,
     
-    # Best Model Logic
+    # Best Model Logic (Optimizing for RMSE)
     load_best_model_at_end=True,
-    metric_for_best_model="f1",      # Now this will work!
-    greater_is_better=True           # F1 is better when higher
+    metric_for_best_model="rmse",  # <--- Track Error
+    greater_is_better=False        # <--- Lower error is better!
 )
 
 print("Training Args set...")

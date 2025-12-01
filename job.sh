@@ -10,9 +10,10 @@
 #SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=8g
-#SBATCH --output=out.txt
+#SBATCH --output=out_reg_%j.txt
 
-source /scratch/cse585f25_class_root/cse585f25_class/pmallela/FineTuning_Factual_Questions/.venv/bin/activate
+source /scratch/cse585f25_class_root/cse585f25_class/anikrish/fine-tune-factual/.venv/bin/activate
 
-python finetuning_factual.py
+python finetuning_regression.py
